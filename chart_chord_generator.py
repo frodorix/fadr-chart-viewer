@@ -337,25 +337,115 @@ def get_scale_notes(chord_name):
     
     return scale_notes
 
-def generate_tone(frequency, duration_ms, sample_rate=44100, amplitude=0.3):
-    """Generar un tono senoidal"""
+def generate_piano_harmonics(frequency, t, amplitude=0.3):
+    """Generar armónicos para simular sonido de piano"""
+    # Armónicos más realistas del piano con amplitudes más suaves
+    harmonics = [
+        (1.0, 1.0),      # Fundamental
+        (2.0, 0.4),      # Segunda armónica (reducida)
+        (3.0, 0.15),     # Tercera armónica (reducida)
+        (4.0, 0.08),     # Cuarta armónica (reducida)
+        (5.0, 0.04),     # Quinta armónica (reducida)
+        (6.0, 0.02),     # Sexta armónica (reducida)
+    ]
+    
+    wave = np.zeros_like(t)
+    for harmonic_freq, harmonic_amp in harmonics:
+        # Añadir slight detuning natural para realismo (muy sutil)
+        detuning = 1.0 + (harmonic_freq - 1) * 0.001  # Muy pequeño desajuste
+        wave += harmonic_amp * np.sin(2 * np.pi * frequency * harmonic_freq * detuning * t)
+    
+    return amplitude * wave
+
+def generate_piano_envelope(duration_seconds, sample_rate):
+    """Generar envolvente ADSR típica del piano"""
+    total_samples = int(sample_rate * duration_seconds)
+    
+    # Parámetros ADSR más suaves para piano
+    attack_time = 0.005   # 5ms attack muy rápido
+    decay_time = 0.15     # 150ms decay más suave
+    sustain_level = 0.8   # 80% del volumen máximo (más alto)
+    release_time = min(0.4, duration_seconds * 0.5)  # Release suave
+    
+    attack_samples = int(attack_time * sample_rate)
+    decay_samples = int(decay_time * sample_rate)
+    release_samples = int(release_time * sample_rate)
+    sustain_samples = max(0, total_samples - attack_samples - decay_samples - release_samples)
+    
+    envelope = np.ones(total_samples)
+    
+    # Attack: 0 a 1 con curva exponencial suave
+    if attack_samples > 0:
+        attack_curve = np.linspace(0, 1, attack_samples)
+        # Aplicar curva exponencial para ataque más natural
+        attack_curve = 1 - np.exp(-5 * attack_curve)
+        envelope[:attack_samples] = attack_curve
+    
+    # Decay: 1 a sustain_level con curva exponencial
+    if decay_samples > 0:
+        start_idx = attack_samples
+        end_idx = start_idx + decay_samples
+        decay_curve = np.linspace(0, 1, decay_samples)
+        # Curva exponencial para decay más natural
+        decay_curve = np.exp(-2 * decay_curve)
+        envelope[start_idx:end_idx] = sustain_level + (1 - sustain_level) * decay_curve
+    
+    # Sustain: mantener sustain_level
+    if sustain_samples > 0:
+        start_idx = attack_samples + decay_samples
+        end_idx = start_idx + sustain_samples
+        envelope[start_idx:end_idx] = sustain_level
+    
+    # Release: sustain_level a 0 con curva exponencial suave
+    if release_samples > 0:
+        start_idx = total_samples - release_samples
+        release_curve = np.linspace(0, 1, release_samples)
+        # Curva exponencial para release más natural
+        release_curve = sustain_level * np.exp(-3 * release_curve)
+        envelope[start_idx:] = release_curve
+    
+    return envelope
+
+def generate_tone(frequency, duration_ms, sample_rate=44100, amplitude=0.3, instrument="piano"):
+    """Generar un tono con diferentes tipos de instrumento"""
     duration_seconds = duration_ms / 1000.0
     t = np.linspace(0, duration_seconds, int(sample_rate * duration_seconds))
     
-    # Generar onda senoidal con envolvente para evitar clicks
-    wave_data = amplitude * np.sin(2 * np.pi * frequency * t)
+    if instrument == "piano":
+        # Generar sonido de piano con armónicos (SIN vibrato)
+        wave_data = generate_piano_harmonics(frequency, t, amplitude)
+        
+        # Aplicar envolvente ADSR del piano
+        envelope = generate_piano_envelope(duration_seconds, sample_rate)
+        wave_data *= envelope
+        
+    elif instrument == "sine":
+        # Tono senoidal simple (original)
+        wave_data = amplitude * np.sin(2 * np.pi * frequency * t)
+        
+        # Aplicar envolvente simple
+        envelope_length = int(0.01 * sample_rate)  # 10ms fade
+        if len(wave_data) > 2 * envelope_length:
+            wave_data[:envelope_length] *= np.linspace(0, 1, envelope_length)
+            wave_data[-envelope_length:] *= np.linspace(1, 0, envelope_length)
     
-    # Aplicar envolvente de ataque y decaimiento
-    envelope_length = int(0.01 * sample_rate)  # 10ms fade
-    if len(wave_data) > 2 * envelope_length:
-        # Fade in
-        wave_data[:envelope_length] *= np.linspace(0, 1, envelope_length)
-        # Fade out
-        wave_data[-envelope_length:] *= np.linspace(1, 0, envelope_length)
+    elif instrument == "organ":
+        # Sonido de órgano con armónicos específicos
+        wave_data = amplitude * (
+            np.sin(2 * np.pi * frequency * t) +
+            0.5 * np.sin(2 * np.pi * frequency * 2 * t) +
+            0.3 * np.sin(2 * np.pi * frequency * 3 * t)
+        )
+        
+        # Envolvente más sostenida para órgano
+        envelope_length = int(0.05 * sample_rate)
+        if len(wave_data) > 2 * envelope_length:
+            wave_data[:envelope_length] *= np.linspace(0, 1, envelope_length)
+            wave_data[-envelope_length:] *= np.linspace(1, 0, envelope_length)
     
     return wave_data
 
-def generate_scale_audio(chord_name, note_duration_ms=700, repetitions=1, ascending=True, descending=True):
+def generate_scale_audio(chord_name, note_duration_ms=700, repetitions=1, ascending=True, descending=True, instrument="piano"):
     """Generar audio de escala para un acorde"""
     try:
         scale_frequencies = get_scale_notes(chord_name)
@@ -372,9 +462,17 @@ def generate_scale_audio(chord_name, note_duration_ms=700, repetitions=1, ascend
         
         # Generar audio completo
         audio_data = []
-        for frequency in sequence:
-            tone = generate_tone(frequency, note_duration_ms, sample_rate)
+        silence_duration_ms = 50  # Pequeña pausa entre notas
+        
+        for i, frequency in enumerate(sequence):
+            # Generar tono con el instrumento seleccionado
+            tone = generate_tone(frequency, note_duration_ms, sample_rate, instrument=instrument)
             audio_data.extend(tone)
+            
+            # Añadir pequeña pausa entre notas (excepto la última)
+            if i < len(sequence) - 1:
+                silence_samples = int(silence_duration_ms * sample_rate / 1000)
+                audio_data.extend(np.zeros(silence_samples))
         
         # Convertir a array de numpy
         audio_array = np.array(audio_data)
@@ -465,6 +563,23 @@ def generate_scale_audio_interface():
             step=1
         )
         
+        # Selección de instrumento
+        st.markdown("**Tipo de instrumento:**")
+        instrument = st.selectbox(
+            "Sonido:",
+            ["piano", "sine", "organ"],
+            index=0,
+            help="Selecciona el tipo de sonido para las notas"
+        )
+        
+        # Mostrar descripción del instrumento
+        instrument_descriptions = {
+            "piano": "🎹 Piano - Sonido suave con armónicos naturales y envolvente realista",
+            "sine": "〰️ Senoidal - Tono puro y limpio (original)",
+            "organ": "🎼 Órgano - Sonido sostenido con armónicos ricos"
+        }
+        st.caption(instrument_descriptions[instrument])
+        
         # Opciones de dirección
         st.markdown("**Dirección de la escala:**")
         ascending = st.checkbox("Ascendente", value=True)
@@ -497,7 +612,8 @@ def generate_scale_audio_interface():
                             note_duration,
                             repetitions,
                             ascending,
-                            descending
+                            descending,
+                            instrument
                         )
                         
                         if audio_data is not None:
@@ -510,7 +626,7 @@ def generate_scale_audio_interface():
                                 st.audio(wav_data, format="audio/wav")
                                 
                                 # Botón de descarga
-                                filename = f"escala_{chord_name.strip().replace(':', '_')}_{note_duration}ms.wav"
+                                filename = f"escala_{chord_name.strip().replace(':', '_')}_{instrument}_{note_duration}ms.wav"
                                 st.download_button(
                                     label="💾 Descargar Audio WAV",
                                     data=wav_data,
@@ -527,6 +643,7 @@ def generate_scale_audio_interface():
                                 st.markdown(f"""
                                 **📊 Información del audio:**
                                 - **Acorde:** {simplify_chord(chord_name.strip())}
+                                - **Instrumento:** {instrument_descriptions[instrument].split(' - ')[1]}
                                 - **Notas por escala:** {len(scale_notes)}
                                 - **Duración por nota:** {note_duration} ms
                                 - **Repeticiones:** {repetitions}
