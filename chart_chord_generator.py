@@ -5,6 +5,10 @@ from fpdf import FPDF
 import base64
 import io
 import os
+import numpy as np
+import wave
+import struct
+import math
 
 def load_chord_data(csv_file):
     """Cargar datos de acordes desde archivo CSV"""
@@ -253,11 +257,319 @@ def get_pdf_download_link(pdf, filename):
         st.error(f"Error al crear enlace de descarga: {e}")
         return f"<p>Error al generar enlace de descarga</p>"
 
+# Funciones para generar audio de escalas
+def note_to_frequency(note_name):
+    """Convertir nombre de nota a frecuencia en Hz"""
+    # Mapeo de notas a semitonos desde A4 (440 Hz)
+    note_mapping = {
+        'C': -9, 'C#': -8, 'Db': -8,
+        'D': -7, 'D#': -6, 'Eb': -6,
+        'E': -5,
+        'F': -4, 'F#': -3, 'Gb': -3,
+        'G': -2, 'G#': -1, 'Ab': -1,
+        'A': 0, 'A#': 1, 'Bb': 1,
+        'B': 2
+    }
+    
+    # Extraer nota base (sin octava)
+    if len(note_name) > 1 and note_name[1] in ['#', 'b']:
+        base_note = note_name[:2]
+        octave = int(note_name[2:]) if len(note_name) > 2 else 4
+    else:
+        base_note = note_name[0]
+        octave = int(note_name[1:]) if len(note_name) > 1 else 4
+    
+    if base_note not in note_mapping:
+        return 440.0  # Default to A4
+    
+    # Calcular semitonos desde A4
+    semitones = note_mapping[base_note] + (octave - 4) * 12
+    
+    # Calcular frecuencia usando la fórmula: f = 440 * 2^(n/12)
+    frequency = 440.0 * (2 ** (semitones / 12.0))
+    return frequency
+
+def get_scale_notes(chord_name):
+    """Obtener las notas de la escala para un acorde dado"""
+    # Simplificar el nombre del acorde
+    chord_name = simplify_chord(chord_name)
+    
+    # Extraer nota raíz
+    if len(chord_name) > 1 and chord_name[1] in ['#', 'b']:
+        root = chord_name[:2]
+        chord_type = chord_name[2:]
+    else:
+        root = chord_name[0]
+        chord_type = chord_name[1:]
+    
+    # Definir intervalos de escalas (en semitonos)
+    scale_intervals = {
+        '': [0, 2, 4, 5, 7, 9, 11],        # Mayor
+        'maj': [0, 2, 4, 5, 7, 9, 11],     # Mayor
+        'm': [0, 2, 3, 5, 7, 8, 10],       # Menor natural
+        'min': [0, 2, 3, 5, 7, 8, 10],     # Menor natural
+        '7': [0, 2, 4, 5, 7, 9, 10],       # Dominante
+        'maj7': [0, 2, 4, 5, 7, 9, 11],    # Mayor séptima
+        'm7': [0, 2, 3, 5, 7, 8, 10],      # Menor séptima
+    }
+    
+    intervals = scale_intervals.get(chord_type.lower(), scale_intervals[''])
+    
+    # Nota raíz a número MIDI (C4 = 60)
+    note_to_midi = {
+        'C': 60, 'C#': 61, 'Db': 61,
+        'D': 62, 'D#': 63, 'Eb': 63,
+        'E': 64,
+        'F': 65, 'F#': 66, 'Gb': 66,
+        'G': 67, 'G#': 68, 'Ab': 68,
+        'A': 69, 'A#': 70, 'Bb': 70,
+        'B': 71
+    }
+    
+    root_midi = note_to_midi.get(root, 60)
+    
+    # Generar notas de la escala
+    scale_notes = []
+    for interval in intervals:
+        midi_note = root_midi + interval
+        frequency = 440.0 * (2 ** ((midi_note - 69) / 12.0))
+        scale_notes.append(frequency)
+    
+    return scale_notes
+
+def generate_tone(frequency, duration_ms, sample_rate=44100, amplitude=0.3):
+    """Generar un tono senoidal"""
+    duration_seconds = duration_ms / 1000.0
+    t = np.linspace(0, duration_seconds, int(sample_rate * duration_seconds))
+    
+    # Generar onda senoidal con envolvente para evitar clicks
+    wave_data = amplitude * np.sin(2 * np.pi * frequency * t)
+    
+    # Aplicar envolvente de ataque y decaimiento
+    envelope_length = int(0.01 * sample_rate)  # 10ms fade
+    if len(wave_data) > 2 * envelope_length:
+        # Fade in
+        wave_data[:envelope_length] *= np.linspace(0, 1, envelope_length)
+        # Fade out
+        wave_data[-envelope_length:] *= np.linspace(1, 0, envelope_length)
+    
+    return wave_data
+
+def generate_scale_audio(chord_name, note_duration_ms=700, repetitions=1, ascending=True, descending=True):
+    """Generar audio de escala para un acorde"""
+    try:
+        scale_frequencies = get_scale_notes(chord_name)
+        sample_rate = 44100
+        
+        # Crear secuencia de notas
+        sequence = []
+        
+        for rep in range(repetitions):
+            if ascending:
+                sequence.extend(scale_frequencies)
+            if descending:
+                sequence.extend(reversed(scale_frequencies))
+        
+        # Generar audio completo
+        audio_data = []
+        for frequency in sequence:
+            tone = generate_tone(frequency, note_duration_ms, sample_rate)
+            audio_data.extend(tone)
+        
+        # Convertir a array de numpy
+        audio_array = np.array(audio_data)
+        
+        # Normalizar
+        if np.max(np.abs(audio_array)) > 0:
+            audio_array = audio_array / np.max(np.abs(audio_array)) * 0.8
+        
+        # Convertir a 16-bit PCM
+        audio_16bit = (audio_array * 32767).astype(np.int16)
+        
+        return audio_16bit, sample_rate
+        
+    except Exception as e:
+        st.error(f"Error generando audio: {e}")
+        return None, None
+
+def save_wav_file(audio_data, sample_rate, filename):
+    """Guardar audio como archivo WAV"""
+    try:
+        # Crear archivo WAV en memoria
+        wav_buffer = io.BytesIO()
+        
+        with wave.open(wav_buffer, 'wb') as wav_file:
+            wav_file.setnchannels(1)  # Mono
+            wav_file.setsampwidth(2)  # 16-bit
+            wav_file.setframerate(sample_rate)
+            wav_file.writeframes(audio_data.tobytes())
+        
+        wav_buffer.seek(0)
+        return wav_buffer.getvalue()
+        
+    except Exception as e:
+        st.error(f"Error guardando archivo WAV: {e}")
+        return None
+
 # Interfaz de Streamlit
 def main():
     st.set_page_config(page_title="Generador de Chart de Acordes", layout="wide")
     
     st.title("🎵 Generador de Chart de Acordes")
+    st.markdown("---")
+    
+    # Menú principal con diferentes funcionalidades
+    menu_option = st.selectbox(
+        "Selecciona una funcionalidad:",
+        ["📊 Generar Chart de Acordes", "🎵 Generar Audio de Escalas"],
+        index=0
+    )
+    
+    if menu_option == "📊 Generar Chart de Acordes":
+        generate_chord_chart_interface()
+    elif menu_option == "🎵 Generar Audio de Escalas":
+        generate_scale_audio_interface()
+
+def generate_scale_audio_interface():
+    """Interfaz para generar audio de escalas"""
+    st.markdown("### 🎵 Generador de Audio de Escalas")
+    st.markdown("---")
+    
+    col1, col2 = st.columns([1, 1])
+    
+    with col1:
+        st.markdown("#### ⚙️ Configuración de la Escala")
+        
+        # Input para el nombre del acorde
+        chord_name = st.text_input(
+            "Nombre del acorde:",
+            value="C",
+            help="Ejemplos: C, Dm, G7, Fmaj7, Am, etc."
+        )
+        
+        # Configuraciones de tiempo
+        note_duration = st.slider(
+            "Duración por nota (milisegundos):",
+            min_value=200,
+            max_value=2000,
+            value=700,
+            step=50,
+            help="Tiempo que dura cada nota de la escala"
+        )
+        
+        repetitions = st.number_input(
+            "Número de repeticiones:",
+            min_value=1,
+            max_value=10,
+            value=1,
+            step=1
+        )
+        
+        # Opciones de dirección
+        st.markdown("**Dirección de la escala:**")
+        ascending = st.checkbox("Ascendente", value=True)
+        descending = st.checkbox("Descendente", value=True)
+        
+        if not ascending and not descending:
+            st.warning("Selecciona al menos una dirección (ascendente o descendente)")
+        
+        # Información sobre el acorde
+        if chord_name.strip():
+            simplified = simplify_chord(chord_name.strip())
+            st.info(f"Acorde simplificado: **{simplified}**")
+            
+            try:
+                scale_frequencies = get_scale_notes(chord_name.strip())
+                st.success(f"✅ Escala válida con {len(scale_frequencies)} notas")
+            except:
+                st.error("⚠️ Nombre de acorde no reconocido")
+    
+    with col2:
+        st.markdown("#### 🎼 Generar Audio")
+        
+        if st.button("🎵 Generar Audio de Escala", type="primary", disabled=not (ascending or descending)):
+            if chord_name.strip():
+                with st.spinner("Generando audio..."):
+                    try:
+                        # Generar audio
+                        audio_data, sample_rate = generate_scale_audio(
+                            chord_name.strip(),
+                            note_duration,
+                            repetitions,
+                            ascending,
+                            descending
+                        )
+                        
+                        if audio_data is not None:
+                            # Guardar como WAV
+                            wav_data = save_wav_file(audio_data, sample_rate, "scale_audio.wav")
+                            
+                            if wav_data:
+                                # Mostrar reproductor de audio
+                                st.success("🎉 Audio generado exitosamente!")
+                                st.audio(wav_data, format="audio/wav")
+                                
+                                # Botón de descarga
+                                filename = f"escala_{chord_name.strip().replace(':', '_')}_{note_duration}ms.wav"
+                                st.download_button(
+                                    label="💾 Descargar Audio WAV",
+                                    data=wav_data,
+                                    file_name=filename,
+                                    mime="audio/wav"
+                                )
+                                
+                                # Información del archivo generado
+                                scale_notes = get_scale_notes(chord_name.strip())
+                                duration_total = len(scale_notes) * note_duration * repetitions
+                                if ascending and descending:
+                                    duration_total *= 2
+                                
+                                st.markdown(f"""
+                                **📊 Información del audio:**
+                                - **Acorde:** {simplify_chord(chord_name.strip())}
+                                - **Notas por escala:** {len(scale_notes)}
+                                - **Duración por nota:** {note_duration} ms
+                                - **Repeticiones:** {repetitions}
+                                - **Duración total:** ~{duration_total/1000:.1f} segundos
+                                """)
+                            else:
+                                st.error("Error al procesar el audio")
+                        else:
+                            st.error("No se pudo generar el audio")
+                    
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+            else:
+                st.warning("Por favor ingresa un nombre de acorde")
+        
+        # Ayuda sobre nombres de acordes
+        with st.expander("📋 Ayuda - Nombres de acordes válidos"):
+            st.markdown("""
+            **Ejemplos de acordes válidos:**
+            
+            **Acordes básicos:**
+            - `C`, `D`, `E`, `F`, `G`, `A`, `B`
+            - `Cm`, `Dm`, `Em`, `Am` (menores)
+            
+            **Con alteraciones:**
+            - `C#`, `Db`, `F#`, `Gb`, `A#`, `Bb`
+            - `C#m`, `Ebm`, `F#m` (menores con alteraciones)
+            
+            **Acordes de séptima:**
+            - `C7`, `G7`, `D7` (dominantes)
+            - `Cmaj7`, `Fmaj7` (mayores con séptima)
+            - `Cm7`, `Am7` (menores con séptima)
+            
+            **Notas:**
+            - Los acordes se simplifican automáticamente
+            - `:maj` se convierte en acorde mayor
+            - `:min` se convierte en `m` (menor)
+            - Si no se especifica tipo, se asume mayor
+            """)
+
+def generate_chord_chart_interface():
+    """Interfaz para generar charts de acordes"""
+    st.markdown("### 📊 Generador de Chart de Acordes")
     st.markdown("---")
     
     # Pestañas para diferentes opciones de carga

@@ -1,0 +1,23 @@
+# ======================================================
+# Generador de Chart de Acordes con Audio de Escalas
+# ======================================================
+
+# Dependencias principales REQUERIDAS
+streamlit>=1.43.0          # Framework web para la interfaz
+pandas>=2.2.0              # Manipulación de datos CSV
+fpdf2>=2.8.0               # Generación de PDFs
+numpy>=1.26.0              # Procesamiento de audio y matemáticas
+
+# Dependencias opcionales para funcionalidades avanzadas
+scipy>=1.11.0              # Mejora el procesamiento de audio (opcional)
+
+# Nota: Las siguientes librerías están incluidas en Python estándar:
+# - base64, io, os, csv, wave, struct, math
+
+# ======================================================
+# Instrucciones de instalación:
+# pip install -r requirements.txt
+# 
+# O para instalación mínima:
+# pip install streamlit pandas fpdf2 numpy
+# ======================================================
