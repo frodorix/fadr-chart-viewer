@@ -27,7 +27,7 @@ Se ha añadido una **nueva funcionalidad de generación de audio** que permite c
 
 ### 1. **Acceder al Generador de Audio**
 ```
-1. Ejecuta la aplicación: python -m streamlit run chart_chord_generator.py
+1. Ejecuta la aplicación: python -m streamlit run streamlit_app.py
 2. En el menú principal, selecciona: "🎵 Generar Audio de Escalas"
 ```
 

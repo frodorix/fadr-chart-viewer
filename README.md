@@ -28,7 +28,7 @@ Esta aplicación genera un chart de acordes musical basado en datos CSV y permit
    ```
 4. Ejecutar la aplicación:
    ```
-   python -m streamlit run chart_chord_generator.py
+   python -m streamlit run streamlit_app.py
    ```
 
 ## Uso de la Aplicación

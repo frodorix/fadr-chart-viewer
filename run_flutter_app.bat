@@ -18,7 +18,7 @@ if %errorlevel% neq 0 (
     echo 4. Agrega C:\flutter\bin al PATH del sistema
     echo.
     echo Alternativamente, puedes usar la aplicacion Streamlit:
-    echo - Ejecuta: python -m streamlit run chart_chord_generator.py
+    echo - Ejecuta: python -m streamlit run streamlit_app.py
     echo.
     pause
     exit /b 1

@@ -17,6 +17,6 @@ python -c "import streamlit, pandas, numpy, fpdf; print('✅ Todas las dependenc
 echo.
 echo Iniciando aplicacion Streamlit...
 echo (Se abrira automaticamente en tu navegador)
-python -m streamlit run chart_chord_generator.py
+python -m streamlit run streamlit_app.py
 
 pause

@@ -16,7 +16,7 @@ if "%choice%"=="1" (
     echo.
     echo Ejecutando aplicacion Streamlit...
     echo (Se abrira en tu navegador web)
-    python -m streamlit run chart_chord_generator.py
+    python -m streamlit run streamlit_app.py
     if %errorlevel% neq 0 (
         echo.
         echo ❌ Error: Python o Streamlit no estan instalados

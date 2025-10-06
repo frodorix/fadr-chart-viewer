@@ -47,7 +47,7 @@ run_flutter_app.bat
 
 Si prefieres no instalar Flutter, puedes usar la versión Streamlit:
 ```cmd
-python -m streamlit run chart_chord_generator.py
+python -m streamlit run streamlit_app.py
 ```
 
 ## 📋 Requisitos del Sistema
