@@ -520,7 +520,7 @@ def main():
     menu_option = st.selectbox(
         "Selecciona una funcionalidad:",
         ["📊 Generar Chart de Acordes", "🎵 Generar Audio de Escalas"],
-        index=0
+        index=1
     )
     
     if menu_option == "📊 Generar Chart de Acordes":
